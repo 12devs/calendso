@@ -64,7 +64,7 @@ export default function Home({ integrations }) {
         switch (integrationType) {
             case "google_calendar": return "integrations/google-calendar.png";
             case "office365_calendar": return "integrations/office-365.png";
-            case "yandex_calendar": return "integrations/zoom.png";
+            case "yandex_calendar": return "integrations/yandex-calendar.png";
             default: return "";
         }
     }

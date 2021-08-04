@@ -18,7 +18,7 @@ export class YandexCalendar implements CalendarApiAdapter {
       password,
     });
 
-    this.calDav = new CalDavClient("https://caldav.yandex.ru", process.env.YANDEX_CALDAV_USER, tokenProvider);
+    this.calDav = new CalDavClient("https://caldav.yandex.ru", user, tokenProvider);
   }
 
   async listCalendars(): Promise<IntegrationCalendar[]> {

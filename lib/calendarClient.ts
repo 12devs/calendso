@@ -11,8 +11,8 @@ import { decrypt } from "./crypto";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { google } = require("googleapis");
 
-const googleAuth = (credential) => {
-  const { client_secret, client_id, redirect_uris } = JSON.parse(process.env.GOOGLE_API_CREDENTIALS).web;
+const googleAuth = (credential, secret) => {
+  const { client_secret, client_id, redirect_uris } = JSON.parse(secret).web;
   const myGoogleAuth = new google.auth.OAuth2(client_id, client_secret, redirect_uris[0]);
   myGoogleAuth.setCredentials(credential.key);
 
@@ -65,7 +65,9 @@ function handleErrorsRaw(response) {
   return response.text();
 }
 
-const o365Auth = (credential) => {
+const o365Auth = (credential, secret) => {
+  const { client_secret, client_id } = JSON.parse(secret);
+
   const isExpired = (expiryDate) => expiryDate < Math.round(+new Date() / 1000);
 
   const refreshAccessToken = (refreshToken) => {
@@ -74,10 +76,10 @@ const o365Auth = (credential) => {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
         scope: "User.Read Calendars.Read Calendars.ReadWrite",
-        client_id: process.env.MS_GRAPH_CLIENT_ID,
+        client_id,
         refresh_token: refreshToken,
         grant_type: "refresh_token",
-        client_secret: process.env.MS_GRAPH_CLIENT_SECRET,
+        client_secret,
       }),
     })
       .then(handleErrorsJson)
@@ -146,8 +148,8 @@ export interface CalendarApiAdapter {
   listCalendars(): Promise<IntegrationCalendar[]>;
 }
 
-const MicrosoftOffice365Calendar = (credential): CalendarApiAdapter => {
-  const auth = o365Auth(credential);
+const MicrosoftOffice365Calendar = (credential, secret): CalendarApiAdapter => {
+  const auth = o365Auth(credential, secret);
 
   const translateEvent = (event: CalendarEvent) => {
     const optional = {};
@@ -293,8 +295,8 @@ const MicrosoftOffice365Calendar = (credential): CalendarApiAdapter => {
   };
 };
 
-const GoogleCalendar = (credential): CalendarApiAdapter => {
-  const auth = googleAuth(credential);
+const GoogleCalendar = (credential, secret): CalendarApiAdapter => {
+  const auth = googleAuth(credential, secret);
   const integrationType = "google_calendar";
 
   return {
@@ -483,24 +485,24 @@ const GoogleCalendar = (credential): CalendarApiAdapter => {
 // factory
 const calendars = (withCredentials): CalendarApiAdapter[] =>
   withCredentials
-    .map((cred) => {
-      switch (cred.type) {
-        case "google_calendar":
-          return GoogleCalendar(cred);
-        case "office365_calendar":
-          return MicrosoftOffice365Calendar(cred);
-        case "yandex_calendar":
-          const { key: { user, hash } } = cred;
+    .map((credential) => {
+      try {
+        const decrypted = decrypt(credential.secret, process.env.CRYPTO_PRIVATE_KEY);
+        delete credential.secret;
 
-          try {
-            const password = decrypt(hash, process.env.CRYPTO_PRIVATE_KEY);
-
-            return new YandexCalendar({ user, password });
-          } catch(error) {
-            console.error("Failed to decrypt password");
-          }
-        default:
-          return; // unknown credential, could be legacy? In any case, ignore
+        switch (credential.type) {
+          case "google_calendar":
+            return GoogleCalendar(credential, decrypted);
+          case "office365_calendar":
+            return MicrosoftOffice365Calendar(credential, decrypted);
+          case "yandex_calendar":
+            return new YandexCalendar(JSON.parse(decrypted));
+          default:
+            return; // unknown credential, could be legacy? In any case, ignore
+        }
+      } catch(error) {
+        console.log(error)
+        console.error("Failed to decrypt secret for integration: " + credential.type);
       }
     })
     .filter(Boolean);
